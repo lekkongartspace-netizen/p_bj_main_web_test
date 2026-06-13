@@ -15,6 +15,8 @@ interface FlatpickrInputProps {
   className?: string;
 }
 
+const pad = (n: number) => String(n).padStart(2, "0");
+
 export default function FlatpickrInput({
   value,
   onChange,
@@ -35,8 +37,24 @@ export default function FlatpickrInput({
       enableTime,
       noCalendar,
       time_24hr: true,
+      // The stored value (real input) stays Gregorian so calcAge and existing
+      // data keep working...
       dateFormat: dateFormat || (enableTime ? "d/m/Y H:i" : "d/m/Y"),
+      // ...while the visible alt input shows the Buddhist (พ.ศ.) year.
+      altInput: true,
+      altFormat: "BE",
       defaultDate: value || undefined,
+      formatDate: (date, format) => {
+        const dd = pad(date.getDate());
+        const mm = pad(date.getMonth() + 1);
+        const yyyy = date.getFullYear();
+        const year = format === "BE" ? yyyy + 543 : yyyy;
+        const datePart = `${dd}/${mm}/${year}`;
+        if (enableTime) {
+          return `${datePart} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+        }
+        return datePart;
+      },
       onChange: (_, dateStr) => {
         onChange(dateStr);
       },
@@ -45,6 +63,7 @@ export default function FlatpickrInput({
     return () => {
       fpRef.current?.destroy();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

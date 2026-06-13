@@ -59,36 +59,37 @@ export async function uploadFileFromBytes(
     fields: "id",
   });
 
-  const fileId = res.data.id || "";
-
-  await drive.permissions.create({
-    fileId,
-    requestBody: { role: "reader", type: "anyone" },
-  });
-
-  return fileId;
+  // Files are NOT made public — they hold PII (ID cards, photos) and are
+  // served only to authenticated admins via the /api/files proxy.
+  return res.data.id || "";
 }
 
 export async function listApplications(): Promise<unknown[]> {
   const auth = getAuth();
   const drive = google.drive({ version: "v3", auth });
 
-  const res = await drive.files.list({
-    q: "'" + process.env.GOOGLE_DRIVE_FOLDER_ID + "' in parents and name contains 'application_' and mimeType='application/json' and trashed=false",
-    fields: "files(id, name, createdTime)",
-    orderBy: "createdTime desc",
-  });
-
-  const files = res.data.files || [];
-  const results = [];
-
-  for (const file of files) {
-    const content = await drive.files.get({
-      fileId: file.id!,
-      alt: "media",
+  // Page through every matching file (Drive returns max 100 by default).
+  const files: { id?: string | null; createdTime?: string | null }[] = [];
+  let pageToken: string | undefined;
+  do {
+    const res = await drive.files.list({
+      q: "'" + process.env.GOOGLE_DRIVE_FOLDER_ID + "' in parents and name contains 'application_' and mimeType='application/json' and trashed=false",
+      fields: "nextPageToken, files(id, name, createdTime)",
+      orderBy: "createdTime desc",
+      pageSize: 100,
+      pageToken,
     });
-    results.push({ id: file.id, createdAt: file.createdTime, ...(content.data as object) });
-  }
+    files.push(...(res.data.files || []));
+    pageToken = res.data.nextPageToken || undefined;
+  } while (pageToken);
+
+  // Fetch file contents in parallel.
+  const results = await Promise.all(
+    files.map(async (file) => {
+      const content = await drive.files.get({ fileId: file.id!, alt: "media" });
+      return { id: file.id, createdAt: file.createdTime, ...(content.data as object) };
+    })
+  );
 
   return results;
 }

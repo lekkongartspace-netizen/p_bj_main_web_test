@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
+import { getSession } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,11 @@ function getAuth() {
 }
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "ไม่มีสิทธิ์เข้าถึง" }, { status: 403 });
+  }
+
   const fileId = req.nextUrl.searchParams.get("id");
   if (!fileId) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
