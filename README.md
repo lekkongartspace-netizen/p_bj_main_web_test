@@ -43,6 +43,18 @@ cp .env.example .env.local
 
 > ไฟล์แนบ (รูป/เรซูเม่/สำเนาบัตร) จะถูกเก็บแบบ **ไม่เปิดสาธารณะ** และเสิร์ฟผ่าน `/api/files` ที่ต้องล็อกอินเป็น admin เท่านั้น
 
+#### ต่ออายุ Google Refresh Token (แก้ error `invalid_grant`)
+
+ถ้าบันทึก/โหลดข้อมูลแล้วขึ้น **`invalid_grant`** แปลว่า `GOOGLE_REFRESH_TOKEN` หมดอายุหรือถูกเพิกถอน ให้ออก token ใหม่:
+
+1. ป้องกันไม่ให้หมดอายุอีก: ไปที่ Google Cloud Console → **OAuth consent screen** → กด **PUBLISH APP** (เปลี่ยนสถานะจาก *Testing* เป็น *In production*) — token ในโหมด Testing จะหมดอายุทุก 7 วัน
+2. ไปที่ [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/) → ปุ่มเฟือง (⚙️) ขวาบน → ติ๊ก **Use your own OAuth credentials** → ใส่ Client ID/Secret เดียวกับใน env
+3. ช่อง Scopes ใส่ `https://www.googleapis.com/auth/drive` → **Authorize APIs** → ล็อกอินบัญชี Google ที่เป็นเจ้าของโฟลเดอร์
+4. กด **Exchange authorization code for tokens** → คัดลอกค่า **Refresh token** (ขึ้นต้นด้วย `1//`)
+5. อัปเดต `GOOGLE_REFRESH_TOKEN` แล้ว **restart dev server** หรือ (บน Vercel) แก้ Environment Variables แล้ว **Redeploy**
+
+> ตรวจด้วยว่า Client ID/Secret/Refresh Token เป็นชุดเดียวกัน และไม่มีช่องว่าง/เครื่องหมายคำพูดติดมา
+
 #### Security (จำเป็น)
 - `PIN_SECRET` = คีย์ลับสำหรับเซ็น session cookie (HMAC) — **ต้องตั้งค่าใน production** และเก็บเป็นความลับ ถ้าเปลี่ยนค่า ผู้ใช้ทุกคนจะต้องล็อกอินใหม่
 

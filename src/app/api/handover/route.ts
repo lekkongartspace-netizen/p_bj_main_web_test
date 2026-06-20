@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { driveErrorMessage } from "@/lib/driveError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,8 +54,7 @@ export async function GET() {
     return NextResponse.json(await listHandovers());
   } catch (err) {
     console.error("[MW] Handover list error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: driveErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -88,8 +88,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, id, shareToken });
   } catch (err) {
     console.error("[MW] Handover create error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: driveErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -128,8 +127,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[MW] Handover update error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: driveErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -162,7 +160,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[MW] Handover delete error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: driveErrorMessage(err) }, { status: 500 });
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { driveErrorMessage } from "@/lib/driveError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +61,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[MW] Handover submit error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: driveErrorMessage(err) }, { status: 500 });
   }
 }

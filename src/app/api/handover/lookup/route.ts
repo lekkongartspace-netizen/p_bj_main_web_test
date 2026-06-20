@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { driveErrorMessage } from "@/lib/driveError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +35,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ id: match.id, token: match.shareToken });
   } catch (err) {
     console.error("[MW] Handover lookup error:", err);
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: driveErrorMessage(err) }, { status: 500 });
   }
 }
