@@ -8,11 +8,13 @@ import InactivityGuard from "@/components/InactivityGuard";
 import SignaturePad from "@/components/SignaturePad";
 import FlatpickrInput from "@/components/FlatpickrInput";
 import { compressImage } from "@/lib/imageCompress";
+import { MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/uploadLimits";
 import {
   HandoverDoc,
   defaultHandover,
   normalizeHandover,
   handoverImageUrl,
+  formatThaiDate,
   uid,
   Building,
   PunchItem,
@@ -20,10 +22,21 @@ import {
   DocItem,
   AcceptItem,
   DetailImage,
+  Deliverable,
+  AppendixItem,
 } from "@/lib/handoverTypes";
 
 interface Props {
   session: { name: string; role: "admin" | "user" };
+}
+
+async function uploadOne(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/handover/upload", { method: "POST", body: fd });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
+  return data.fileId as string;
 }
 
 // ---- Single-image uploader: compress in the browser, upload one per request --
@@ -55,12 +68,7 @@ function ImageUpload({
         setBusy(false);
         return;
       }
-      const fd = new FormData();
-      fd.append("file", compressed);
-      const res = await fetch("/api/handover/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "อัปโหลดไม่สำเร็จ");
-      onChange(data.fileId);
+      onChange(await uploadOne(compressed));
     } catch (e2) {
       setErr(e2 instanceof Error ? e2.message : "อัปโหลดไม่สำเร็จ");
     } finally {
@@ -112,14 +120,16 @@ function SectionCard({ title, desc, children }: { title: string; desc?: string; 
   return (
     <div className="card">
       <h2 className="text-lg font-bold text-gray-900">{title}</h2>
-      {desc && <p className="text-sm text-gray-500 mt-0.5 mb-4">{desc}</p>}
-      {!desc && <div className="mb-4" />}
+      {desc ? <p className="text-sm text-gray-500 mt-0.5 mb-4">{desc}</p> : <div className="mb-4" />}
       {children}
     </div>
   );
 }
 
 const iconBtn = "text-gray-400 hover:text-red-500 transition-colors";
+const xIcon = (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+);
 
 export default function HandoverEditClient({ session }: Props) {
   const [doc, setDoc] = useState<HandoverDoc>(() => defaultHandover("", ""));
@@ -128,8 +138,10 @@ export default function HandoverEditClient({ session }: Props) {
   const [savedOnce, setSavedOnce] = useState(false);
   const [shareLink, setShareLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const [appendixBusy, setAppendixBusy] = useState(false);
+  const [appendixErr, setAppendixErr] = useState("");
+  const appendixRef = useRef<HTMLInputElement>(null);
 
-  // Load existing document when ?id= is present.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("id");
@@ -151,7 +163,6 @@ export default function HandoverEditClient({ session }: Props) {
       .finally(() => setLoading(false));
   }, []);
 
-  // Update share link whenever the doc gains an id+token.
   useEffect(() => {
     if (doc.id && doc.shareToken) {
       setShareLink(window.location.origin + "/handover/" + doc.id + "?token=" + doc.shareToken);
@@ -161,52 +172,15 @@ export default function HandoverEditClient({ session }: Props) {
   const set = <K extends keyof HandoverDoc>(key: K, val: HandoverDoc[K]) =>
     setDoc((p) => ({ ...p, [key]: val }));
 
-  // ---- Scopes -----------------------------------------------------------------
-  const setScopeStatus = (i: number, status: "completed" | "pending") =>
-    setDoc((p) => ({ ...p, scopes: p.scopes.map((s, idx) => (idx === i ? { ...s, status } : s)) }));
-  const setScopeLabel = (i: number, label: string) =>
-    setDoc((p) => ({ ...p, scopes: p.scopes.map((s, idx) => (idx === i ? { ...s, label } : s)) }));
+  // ---- 2. Deliverables --------------------------------------------------------
+  const addDeliverable = () =>
+    setDoc((p) => ({ ...p, deliverables: [...p.deliverables, { id: uid("dl_"), name: "", detail: "", status: "done" }] }));
+  const updateDeliverable = (id: string, patch: Partial<Deliverable>) =>
+    setDoc((p) => ({ ...p, deliverables: p.deliverables.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
+  const removeDeliverable = (id: string) =>
+    setDoc((p) => ({ ...p, deliverables: p.deliverables.filter((d) => d.id !== id) }));
 
-  // ---- Buildings --------------------------------------------------------------
-  const addBuilding = () =>
-    setDoc((p) => ({
-      ...p,
-      buildings: [
-        ...p.buildings,
-        { id: uid("b_"), name: "", imageFileId: "", scopes: [{ label: "โครงสร้าง", done: true }], status: "completed", note: "" },
-      ],
-    }));
-  const updateBuilding = (id: string, patch: Partial<Building>) =>
-    setDoc((p) => ({ ...p, buildings: p.buildings.map((b) => (b.id === id ? { ...b, ...patch } : b)) }));
-  const removeBuilding = (id: string) =>
-    setDoc((p) => ({ ...p, buildings: p.buildings.filter((b) => b.id !== id) }));
-  const addBuildingScope = (id: string) =>
-    setDoc((p) => ({
-      ...p,
-      buildings: p.buildings.map((b) => (b.id === id ? { ...b, scopes: [...b.scopes, { label: "", done: true }] } : b)),
-    }));
-  const updateBuildingScope = (bid: string, i: number, patch: Partial<{ label: string; done: boolean }>) =>
-    setDoc((p) => ({
-      ...p,
-      buildings: p.buildings.map((b) =>
-        b.id === bid ? { ...b, scopes: b.scopes.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) } : b
-      ),
-    }));
-  const removeBuildingScope = (bid: string, i: number) =>
-    setDoc((p) => ({
-      ...p,
-      buildings: p.buildings.map((b) => (b.id === bid ? { ...b, scopes: b.scopes.filter((_, idx) => idx !== i) } : b)),
-    }));
-
-  // ---- Detail images ----------------------------------------------------------
-  const addDetailImage = () =>
-    setDoc((p) => ({ ...p, detailImages: [...p.detailImages, { id: uid("di_"), fileId: "", caption: "" }] }));
-  const updateDetailImage = (id: string, patch: Partial<DetailImage>) =>
-    setDoc((p) => ({ ...p, detailImages: p.detailImages.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
-  const removeDetailImage = (id: string) =>
-    setDoc((p) => ({ ...p, detailImages: p.detailImages.filter((d) => d.id !== id) }));
-
-  // ---- Documents --------------------------------------------------------------
+  // ---- 3. Documents -----------------------------------------------------------
   const updateDocItem = (id: string, patch: Partial<DocItem>) =>
     setDoc((p) => ({ ...p, documents: p.documents.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
   const addDocItem = () =>
@@ -214,18 +188,15 @@ export default function HandoverEditClient({ session }: Props) {
   const removeDocItem = (id: string) =>
     setDoc((p) => ({ ...p, documents: p.documents.filter((d) => d.id !== id) }));
 
-  // ---- Punch list -------------------------------------------------------------
+  // ---- 4. Punch list ----------------------------------------------------------
   const addPunch = () =>
-    setDoc((p) => ({
-      ...p,
-      punchList: [...p.punchList, { id: uid("p_"), location: "", description: "", fixDate: "", status: "pending" }],
-    }));
+    setDoc((p) => ({ ...p, punchList: [...p.punchList, { id: uid("p_"), location: "", description: "", fixDate: "", status: "pending" }] }));
   const updatePunch = (id: string, patch: Partial<PunchItem>) =>
     setDoc((p) => ({ ...p, punchList: p.punchList.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
   const removePunch = (id: string) =>
     setDoc((p) => ({ ...p, punchList: p.punchList.filter((x) => x.id !== id) }));
 
-  // ---- Assets -----------------------------------------------------------------
+  // ---- 6. Assets --------------------------------------------------------------
   const addAsset = () =>
     setDoc((p) => ({ ...p, assets: [...p.assets, { id: uid("a_"), item: "", qty: "", note: "" }] }));
   const updateAsset = (id: string, patch: Partial<AssetItem>) =>
@@ -233,7 +204,74 @@ export default function HandoverEditClient({ session }: Props) {
   const removeAsset = (id: string) =>
     setDoc((p) => ({ ...p, assets: p.assets.filter((x) => x.id !== id) }));
 
-  // ---- Acceptance items -------------------------------------------------------
+  // ---- 8. Appendix (image + PDF) ---------------------------------------------
+  const handleAppendix = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setAppendixErr("");
+    setAppendixBusy(true);
+    try {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      let toUpload = file;
+      if (!isPdf) {
+        const { file: compressed, error } = await compressImage(file);
+        if (error) {
+          setAppendixErr(error);
+          setAppendixBusy(false);
+          return;
+        }
+        toUpload = compressed;
+      } else if (file.size > MAX_FILE_BYTES) {
+        setAppendixErr("ไฟล์ PDF ใหญ่เกิน " + MAX_FILE_MB + "MB");
+        setAppendixBusy(false);
+        return;
+      }
+      const fileId = await uploadOne(toUpload);
+      setDoc((p) => ({ ...p, appendixItems: [...p.appendixItems, { id: uid("ap_"), fileId, caption: "", isPdf }] }));
+    } catch (e2) {
+      setAppendixErr(e2 instanceof Error ? e2.message : "อัปโหลดไม่สำเร็จ");
+    } finally {
+      setAppendixBusy(false);
+    }
+  };
+  const updateAppendix = (id: string, patch: Partial<AppendixItem>) =>
+    setDoc((p) => ({ ...p, appendixItems: p.appendixItems.map((x) => (x.id === id ? { ...x, ...patch } : x)) }));
+  const removeAppendix = (id: string) =>
+    setDoc((p) => ({ ...p, appendixItems: p.appendixItems.filter((x) => x.id !== id) }));
+
+  // ---- Extras: scopes / buildings / detail images / accept items --------------
+  const setScopeStatus = (i: number, status: "completed" | "pending") =>
+    setDoc((p) => ({ ...p, scopes: p.scopes.map((s, idx) => (idx === i ? { ...s, status } : s)) }));
+  const setScopeLabel = (i: number, label: string) =>
+    setDoc((p) => ({ ...p, scopes: p.scopes.map((s, idx) => (idx === i ? { ...s, label } : s)) }));
+
+  const addBuilding = () =>
+    setDoc((p) => ({
+      ...p,
+      buildings: [...p.buildings, { id: uid("b_"), name: "", imageFileId: "", scopes: [{ label: "โครงสร้าง", done: true }], status: "completed", note: "" }],
+    }));
+  const updateBuilding = (id: string, patch: Partial<Building>) =>
+    setDoc((p) => ({ ...p, buildings: p.buildings.map((b) => (b.id === id ? { ...b, ...patch } : b)) }));
+  const removeBuilding = (id: string) =>
+    setDoc((p) => ({ ...p, buildings: p.buildings.filter((b) => b.id !== id) }));
+  const addBuildingScope = (id: string) =>
+    setDoc((p) => ({ ...p, buildings: p.buildings.map((b) => (b.id === id ? { ...b, scopes: [...b.scopes, { label: "", done: true }] } : b)) }));
+  const updateBuildingScope = (bid: string, i: number, patch: Partial<{ label: string; done: boolean }>) =>
+    setDoc((p) => ({
+      ...p,
+      buildings: p.buildings.map((b) => (b.id === bid ? { ...b, scopes: b.scopes.map((s, idx) => (idx === i ? { ...s, ...patch } : s)) } : b)),
+    }));
+  const removeBuildingScope = (bid: string, i: number) =>
+    setDoc((p) => ({ ...p, buildings: p.buildings.map((b) => (b.id === bid ? { ...b, scopes: b.scopes.filter((_, idx) => idx !== i) } : b)) }));
+
+  const addDetailImage = () =>
+    setDoc((p) => ({ ...p, detailImages: [...p.detailImages, { id: uid("di_"), fileId: "", caption: "" }] }));
+  const updateDetailImage = (id: string, patch: Partial<DetailImage>) =>
+    setDoc((p) => ({ ...p, detailImages: p.detailImages.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
+  const removeDetailImage = (id: string) =>
+    setDoc((p) => ({ ...p, detailImages: p.detailImages.filter((d) => d.id !== id) }));
+
   const addAccept = () =>
     setDoc((p) => ({ ...p, acceptItems: [...p.acceptItems, { id: uid("ac_"), label: "" }] }));
   const updateAccept = (id: string, patch: Partial<AcceptItem>) =>
@@ -257,10 +295,8 @@ export default function HandoverEditClient({ session }: Props) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
-
       if (isNew && data.id) {
         setDoc((p) => ({ ...p, id: data.id, shareToken: data.shareToken }));
-        // Reflect the new id in the URL without a reload.
         window.history.replaceState(null, "", "/admin/handover/edit?id=" + data.id);
       }
       setSavedOnce(true);
@@ -286,9 +322,7 @@ export default function HandoverEditClient({ session }: Props) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Navbar session={session} />
-        <div className="py-20">
-          <Spinner />
-        </div>
+        <div className="py-20"><Spinner /></div>
       </div>
     );
   }
@@ -320,6 +354,9 @@ export default function HandoverEditClient({ session }: Props) {
                 เปิดเอกสาร
               </a>
             </div>
+            {doc.projectCode && (
+              <p className="text-xs text-gray-500 mt-2">ลูกค้าเปิดเองได้ด้วย &quot;รหัสโครงการ&quot;: <span className="font-semibold text-gray-700">{doc.projectCode}</span></p>
+            )}
           </div>
         )}
 
@@ -332,7 +369,7 @@ export default function HandoverEditClient({ session }: Props) {
             </div>
             <div>
               <label className="label">รหัสโครงการ</label>
-              <input value={doc.projectCode} onChange={(e) => set("projectCode", e.target.value)} className="input-field" />
+              <input value={doc.projectCode} onChange={(e) => set("projectCode", e.target.value)} className="input-field" placeholder="ลูกค้าใช้รหัสนี้เปิดดูเอง" />
             </div>
             <div>
               <label className="label">สถานที่ก่อสร้าง</label>
@@ -357,33 +394,168 @@ export default function HandoverEditClient({ session }: Props) {
           </div>
         </SectionCard>
 
-        {/* 2. Scope / completion */}
-        <SectionCard title="2. สถานะความสำเร็จของงาน" desc="ขอบเขตงานหลักและสถานะ (แสดงในหน้า Completion Status)">
+        {/* 2. Deliverables */}
+        <SectionCard title="2. รายละเอียดงานที่ส่งมอบ" desc="ลำดับอัตโนมัติ · เลือกสถานะ เสร็จ/ค้าง · ลบหรือเพิ่มหัวข้อได้">
           <div className="space-y-2">
-            {doc.scopes.map((s, i) => (
-              <div key={s.key} className="flex items-center gap-2">
-                <input value={s.label} onChange={(e) => setScopeLabel(i, e.target.value)} className="input-field flex-1" />
-                <select value={s.status} onChange={(e) => setScopeStatus(i, e.target.value as "completed" | "pending")} className="input-field w-36">
-                  <option value="completed">เสร็จแล้ว</option>
-                  <option value="pending">ค้าง</option>
-                </select>
+            {doc.deliverables.map((d, i) => (
+              <div key={d.id} className="flex items-start gap-2">
+                <span className="w-7 h-9 flex items-center justify-center text-sm font-bold text-brand-red shrink-0">{i + 1}</span>
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input value={d.name} onChange={(e) => updateDeliverable(d.id, { name: e.target.value })} className="input-field" placeholder="รายการงาน เช่น งานโครงสร้าง" />
+                  <input value={d.detail} onChange={(e) => updateDeliverable(d.id, { detail: e.target.value })} className="input-field" placeholder="รายละเอียด เช่น ฐานราก เสา คาน" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => updateDeliverable(d.id, { status: d.status === "done" ? "pending" : "done" })}
+                  className={"shrink-0 w-24 h-[42px] rounded-lg text-sm font-semibold border-2 transition-colors " + (d.status === "done" ? "border-green-500 bg-green-50 text-green-700" : "border-yellow-400 bg-yellow-50 text-yellow-700")}
+                >
+                  {d.status === "done" ? "✔ เสร็จ" : "☐ ค้าง"}
+                </button>
+                <button type="button" onClick={() => removeDeliverable(d.id)} className={"shrink-0 mt-2.5 " + iconBtn}>{xIcon}</button>
               </div>
             ))}
           </div>
+          <button type="button" onClick={addDeliverable} className="btn-secondary w-full mt-3">+ เพิ่มรายการงาน</button>
         </SectionCard>
 
-        {/* 3. Site overview */}
-        <SectionCard title="3. ผังโครงการ (Site Overview)" desc="รูปผังรวม/ภาพมุมสูง และรายการอาคาร">
+        {/* 3. Documents handed over */}
+        <SectionCard title="3. รายการเอกสารที่ส่งมอบ" desc="เปิด/ปิด รายการที่ส่งมอบ · เพิ่มรายการอื่นได้">
+          <div className="space-y-2">
+            {doc.documents.map((d) => (
+              <div key={d.id} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => updateDocItem(d.id, { included: !d.included })}
+                  className={"shrink-0 w-20 h-[42px] rounded-lg text-xs font-semibold border-2 transition-colors " + (d.included ? "border-green-500 bg-green-50 text-green-700" : "border-gray-300 bg-gray-50 text-gray-400")}
+                >
+                  {d.included ? "✔ ส่งมอบ" : "ไม่ส่ง"}
+                </button>
+                <input value={d.label} onChange={(e) => updateDocItem(d.id, { label: e.target.value })} className="input-field flex-1" />
+                <button type="button" onClick={() => removeDocItem(d.id)} className={iconBtn}>{xIcon}</button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addDocItem} className="text-xs text-brand-red mt-2 hover:underline">+ เพิ่มรายการเอกสาร</button>
+        </SectionCard>
+
+        {/* 4. Punch list */}
+        <SectionCard title="4. งานคงค้าง (Punch List)" desc="รายการที่ต้องแก้ไข">
+          <div className="space-y-3">
+            {doc.punchList.map((x, i) => (
+              <div key={x.id} className="border border-gray-200 rounded-xl p-3 relative">
+                <button type="button" onClick={() => removePunch(x.id)} className={"absolute top-3 right-3 " + iconBtn}>{xIcon}</button>
+                <h4 className="text-xs font-semibold text-gray-500 mb-2">รายการที่ {i + 1}</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input value={x.location} onChange={(e) => updatePunch(x.id, { location: e.target.value })} className="input-field" placeholder="ตำแหน่ง เช่น อาคารหลัก" />
+                  <div className="flex gap-2">
+                    <FlatpickrInput value={x.fixDate} onChange={(v) => updatePunch(x.id, { fixDate: v })} placeholder="กำหนดแก้ไข" />
+                    <select value={x.status} onChange={(e) => updatePunch(x.id, { status: e.target.value as "pending" | "fixed" })} className="input-field w-32">
+                      <option value="pending">ค้าง</option>
+                      <option value="fixed">แก้แล้ว</option>
+                    </select>
+                  </div>
+                  <input value={x.description} onChange={(e) => updatePunch(x.id, { description: e.target.value })} className="input-field sm:col-span-2" placeholder="รายละเอียดงานที่ต้องแก้" />
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addPunch} className="btn-secondary w-full mt-3">+ เพิ่มงานคงค้าง</button>
+        </SectionCard>
+
+        {/* 5. Acceptance result (client-filled) */}
+        <SectionCard title="5. การตรวจรับงาน" desc="ส่วนนี้ลูกค้าจะกรอกผ่านลิงก์ตรวจรับ">
+          {doc.clientSubmittedAt ? (
+            <div className={"rounded-xl px-4 py-3 text-sm " + (doc.clientResult === "fail" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700")}>
+              <p className="font-semibold">{doc.clientResult === "fail" ? "❌ ลูกค้าไม่ผ่าน" : "✅ ลูกค้าตรวจรับแล้ว"}{doc.clientName ? " · " + doc.clientName : ""}</p>
+              {doc.clientResult === "fail" && doc.clientReason && <p className="mt-1">เหตุผล: {doc.clientReason}</p>}
+              {doc.clientNote && <p className="mt-1">หมายเหตุ: {doc.clientNote}</p>}
+              <p className="text-xs mt-1 opacity-75">ส่งเมื่อ {formatThaiDate(doc.clientSubmittedAt)}</p>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-gray-50 border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500">
+              ☐ ผ่าน &nbsp;&nbsp; ☐ ไม่ผ่าน (ระบุเหตุผล) &nbsp;·&nbsp; ลูกค้าจะเลือกผลและกรอกหมายเหตุเองในหน้าตรวจรับ
+            </div>
+          )}
+        </SectionCard>
+
+        {/* 6. Assets / keys */}
+        <SectionCard title="6. การส่งมอบทรัพย์สิน / กุญแจ / ระบบ">
+          <div className="space-y-2">
+            {doc.assets.map((x) => (
+              <div key={x.id} className="flex gap-2">
+                <input value={x.item} onChange={(e) => updateAsset(x.id, { item: e.target.value })} className="input-field flex-1" placeholder="รายการ" />
+                <input value={x.qty} onChange={(e) => updateAsset(x.id, { qty: e.target.value })} className="input-field w-24" placeholder="จำนวน" />
+                <input value={x.note} onChange={(e) => updateAsset(x.id, { note: e.target.value })} className="input-field flex-1" placeholder="หมายเหตุ" />
+                <button type="button" onClick={() => removeAsset(x.id)} className={iconBtn}>{xIcon}</button>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addAsset} className="text-xs text-brand-red mt-2 hover:underline">+ เพิ่มรายการ</button>
+        </SectionCard>
+
+        {/* 7. Signatures */}
+        <SectionCard title="7. ลายเซ็นรับรอง" desc="ลายเซ็นผู้รับเหมา (กรอกที่นี่) · ลูกค้าจะเซ็นเองในหน้าตรวจรับ">
+          <p className="text-sm font-bold text-gray-700 mb-2">ผู้ส่งมอบ (ผู้รับเหมา)</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">ชื่อผู้ส่งมอบ</label>
+              <input value={doc.contractorSignName} onChange={(e) => set("contractorSignName", e.target.value)} className="input-field" />
+              <label className="label mt-3">วันที่</label>
+              <FlatpickrInput value={doc.contractorSignDate} onChange={(v) => set("contractorSignDate", v)} placeholder="เลือกวันที่" />
+            </div>
+            <SignaturePad value={doc.contractorSignature} onChange={(v) => set("contractorSignature", v)} label="ลายเซ็น" />
+          </div>
+          <div className="mt-4 rounded-xl bg-gray-50 border border-dashed border-gray-300 px-4 py-3 text-sm text-gray-500">
+            ผู้รับมอบ (เจ้าของงาน): {doc.clientSignature ? "ลูกค้าเซ็นแล้ว — " + (doc.clientName || "") : "ลูกค้าจะเซ็นชื่อในหน้าตรวจรับ"}
+          </div>
+        </SectionCard>
+
+        {/* 8. Appendix */}
+        <SectionCard title="8. ภาคผนวก" desc="รูปภาพหน้างาน · รายงานการทดสอบระบบ · เอกสารเพิ่มเติม (รองรับรูปและ PDF)">
+          {doc.appendixItems.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              {doc.appendixItems.map((a) => (
+                <div key={a.id} className="border border-gray-200 rounded-xl p-3">
+                  {a.isPdf ? (
+                    <a href={handoverImageUrl(a.fileId)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 h-40 bg-gray-50 rounded-lg justify-center text-brand-red">
+                      <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      <span className="text-sm font-medium">เปิดไฟล์ PDF</span>
+                    </a>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={handoverImageUrl(a.fileId)} alt="" className="w-full h-40 object-cover rounded-lg" />
+                  )}
+                  <input value={a.caption} onChange={(e) => updateAppendix(a.id, { caption: e.target.value })} className="input-field mt-2 text-sm" placeholder="คำบรรยาย เช่น รูปหน้างาน / รายงานทดสอบ" />
+                  <button type="button" onClick={() => removeAppendix(a.id)} className="text-xs text-gray-400 hover:text-red-500 mt-2">ลบไฟล์นี้</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button type="button" disabled={appendixBusy} onClick={() => appendixRef.current?.click()} className="btn-secondary w-full">
+            {appendixBusy ? "กำลังอัปโหลด..." : "+ เพิ่มไฟล์ภาคผนวก (รูป / PDF)"}
+          </button>
+          <input ref={appendixRef} type="file" accept="image/*,application/pdf" onChange={handleAppendix} className="hidden" />
+          {appendixErr && <p className="text-xs text-red-500 mt-2">{appendixErr}</p>}
+        </SectionCard>
+
+        {/* ---- Optional extras ---- */}
+        <div className="pt-2">
+          <div className="flex items-center gap-3">
+            <div className="h-px bg-gray-200 flex-1" />
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">ส่วนเพิ่มเติม (ใส่หรือไม่ก็ได้)</span>
+            <div className="h-px bg-gray-200 flex-1" />
+          </div>
+        </div>
+
+        {/* Site overview + buildings */}
+        <SectionCard title="ผังโครงการ (Site Overview) + อาคาร" desc="รูปผังรวม/ภาพมุมสูง และรายการอาคาร">
           <label className="label">รูปผังรวม / ภาพมุมสูง</label>
           <ImageUpload fileId={doc.siteImageFileId} onChange={(id) => set("siteImageFileId", id)} hint="อัปโหลดภาพผังโครงการ" tall />
-
           <div className="mt-6 space-y-4">
             <label className="label">อาคารในโครงการ</label>
             {doc.buildings.map((b, bi) => (
               <div key={b.id} className="border border-gray-200 rounded-xl p-4 relative">
-                <button type="button" onClick={() => removeBuilding(b.id)} className={"absolute top-3 right-3 " + iconBtn}>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <button type="button" onClick={() => removeBuilding(b.id)} className={"absolute top-3 right-3 " + iconBtn}>{xIcon}</button>
                 <h4 className="text-sm font-semibold text-gray-500 mb-3">อาคารที่ {bi + 1}</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -407,16 +579,9 @@ export default function HandoverEditClient({ session }: Props) {
                   <div className="space-y-2">
                     {b.scopes.map((s, si) => (
                       <div key={si} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={s.done}
-                          onChange={(e) => updateBuildingScope(b.id, si, { done: e.target.checked })}
-                          className="w-4 h-4 accent-brand-red"
-                        />
+                        <input type="checkbox" checked={s.done} onChange={(e) => updateBuildingScope(b.id, si, { done: e.target.checked })} className="w-4 h-4 accent-brand-red" />
                         <input value={s.label} onChange={(e) => updateBuildingScope(b.id, si, { label: e.target.value })} className="input-field flex-1" placeholder="เช่น งานระบบ" />
-                        <button type="button" onClick={() => removeBuildingScope(b.id, si)} className={iconBtn}>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+                        <button type="button" onClick={() => removeBuildingScope(b.id, si)} className={iconBtn}>{xIcon}</button>
                       </div>
                     ))}
                   </div>
@@ -428,8 +593,8 @@ export default function HandoverEditClient({ session }: Props) {
           </div>
         </SectionCard>
 
-        {/* 4. Detail & finish gallery */}
-        <SectionCard title="4. รายละเอียดและงานเก็บ (Detail & Finish)" desc="อัปโหลดรูปประกอบในแต่ละจุด พร้อมคำบรรยาย">
+        {/* Detail & finish */}
+        <SectionCard title="รายละเอียดและงานเก็บ (Detail & Finish)" desc="รูปประกอบในแต่ละจุด พร้อมคำบรรยาย">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {doc.detailImages.map((d) => (
               <div key={d.id} className="border border-gray-200 rounded-xl p-3">
@@ -442,50 +607,23 @@ export default function HandoverEditClient({ session }: Props) {
           <button type="button" onClick={addDetailImage} className="btn-secondary w-full mt-4">+ เพิ่มรูป</button>
         </SectionCard>
 
-        {/* 5. Documents */}
-        <SectionCard title="5. เอกสารที่ส่งมอบ" desc="ติ๊กรายการที่ส่งมอบให้ลูกค้า">
+        {/* Completion status (scopes) */}
+        <SectionCard title="สถานะความสำเร็จของงาน (Completion Status)" desc="ขอบเขตงานหลักและสถานะ">
           <div className="space-y-2">
-            {doc.documents.map((d) => (
-              <div key={d.id} className="flex items-center gap-2">
-                <input type="checkbox" checked={d.included} onChange={(e) => updateDocItem(d.id, { included: e.target.checked })} className="w-4 h-4 accent-brand-red" />
-                <input value={d.label} onChange={(e) => updateDocItem(d.id, { label: e.target.value })} className="input-field flex-1" />
-                <button type="button" onClick={() => removeDocItem(d.id)} className={iconBtn}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+            {doc.scopes.map((s, i) => (
+              <div key={s.key} className="flex items-center gap-2">
+                <input value={s.label} onChange={(e) => setScopeLabel(i, e.target.value)} className="input-field flex-1" />
+                <select value={s.status} onChange={(e) => setScopeStatus(i, e.target.value as "completed" | "pending")} className="input-field w-36">
+                  <option value="completed">เสร็จแล้ว</option>
+                  <option value="pending">ค้าง</option>
+                </select>
               </div>
             ))}
           </div>
-          <button type="button" onClick={addDocItem} className="text-xs text-brand-red mt-2 hover:underline">+ เพิ่มรายการเอกสาร</button>
         </SectionCard>
 
-        {/* 6. Punch list */}
-        <SectionCard title="6. งานคงค้าง (Punch List)" desc="รายการที่ต้องแก้ไข">
-          <div className="space-y-3">
-            {doc.punchList.map((x, i) => (
-              <div key={x.id} className="border border-gray-200 rounded-xl p-3 relative">
-                <button type="button" onClick={() => removePunch(x.id)} className={"absolute top-3 right-3 " + iconBtn}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-                <h4 className="text-xs font-semibold text-gray-500 mb-2">รายการที่ {i + 1}</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input value={x.location} onChange={(e) => updatePunch(x.id, { location: e.target.value })} className="input-field" placeholder="ตำแหน่ง เช่น อาคารหลัก" />
-                  <div className="flex gap-2">
-                    <FlatpickrInput value={x.fixDate} onChange={(v) => updatePunch(x.id, { fixDate: v })} placeholder="กำหนดแก้ไข" />
-                    <select value={x.status} onChange={(e) => updatePunch(x.id, { status: e.target.value as "pending" | "fixed" })} className="input-field w-32">
-                      <option value="pending">ค้าง</option>
-                      <option value="fixed">แก้แล้ว</option>
-                    </select>
-                  </div>
-                  <input value={x.description} onChange={(e) => updatePunch(x.id, { description: e.target.value })} className="input-field sm:col-span-2" placeholder="รายละเอียดงานที่ต้องแก้" />
-                </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={addPunch} className="btn-secondary w-full mt-3">+ เพิ่มงานคงค้าง</button>
-        </SectionCard>
-
-        {/* 7. Warranty */}
-        <SectionCard title="7. การรับประกัน (Warranty)">
+        {/* Warranty */}
+        <SectionCard title="การรับประกัน (Warranty)">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="label">ระยะเวลา (เดือน)</label>
@@ -498,50 +636,18 @@ export default function HandoverEditClient({ session }: Props) {
           </div>
         </SectionCard>
 
-        {/* 8. Assets / keys */}
-        <SectionCard title="8. การส่งมอบทรัพย์สิน / กุญแจ">
-          <div className="space-y-2">
-            {doc.assets.map((x) => (
-              <div key={x.id} className="flex gap-2">
-                <input value={x.item} onChange={(e) => updateAsset(x.id, { item: e.target.value })} className="input-field flex-1" placeholder="รายการ" />
-                <input value={x.qty} onChange={(e) => updateAsset(x.id, { qty: e.target.value })} className="input-field w-24" placeholder="จำนวน" />
-                <input value={x.note} onChange={(e) => updateAsset(x.id, { note: e.target.value })} className="input-field flex-1" placeholder="หมายเหตุ" />
-                <button type="button" onClick={() => removeAsset(x.id)} className={iconBtn}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={addAsset} className="text-xs text-brand-red mt-2 hover:underline">+ เพิ่มรายการ</button>
-        </SectionCard>
-
-        {/* 9. Acceptance checklist */}
-        <SectionCard title="9. รายการให้ลูกค้าตรวจรับ" desc="ลูกค้าจะติ๊กแต่ละข้อในลิงก์ตรวจรับ">
+        {/* Acceptance checklist (per-item ticking) */}
+        <SectionCard title="รายการให้ลูกค้าติ๊กตรวจรับ (รายข้อ)" desc="ถ้าใส่ไว้ ลูกค้าจะติ๊กแต่ละข้อในหน้าตรวจรับเพิ่มเติมได้">
           <div className="space-y-2">
             {doc.acceptItems.map((x, i) => (
               <div key={x.id} className="flex items-center gap-2">
                 <span className="w-6 h-6 bg-brand-light text-brand-red rounded-full flex items-center justify-center text-xs font-bold shrink-0">{i + 1}</span>
                 <input value={x.label} onChange={(e) => updateAccept(x.id, { label: e.target.value })} className="input-field flex-1" />
-                <button type="button" onClick={() => removeAccept(x.id)} className={iconBtn}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+                <button type="button" onClick={() => removeAccept(x.id)} className={iconBtn}>{xIcon}</button>
               </div>
             ))}
           </div>
           <button type="button" onClick={addAccept} className="text-xs text-brand-red mt-2 hover:underline">+ เพิ่มรายการตรวจรับ</button>
-        </SectionCard>
-
-        {/* 10. Contractor signature */}
-        <SectionCard title="10. ผู้ส่งมอบ (ผู้รับเหมา)" desc="ลายเซ็นฝั่งบริษัท (ลูกค้าจะเซ็นในลิงก์ตรวจรับ)">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">ชื่อผู้ส่งมอบ</label>
-              <input value={doc.contractorSignName} onChange={(e) => set("contractorSignName", e.target.value)} className="input-field" />
-              <label className="label mt-3">วันที่</label>
-              <FlatpickrInput value={doc.contractorSignDate} onChange={(v) => set("contractorSignDate", v)} placeholder="เลือกวันที่" />
-            </div>
-            <SignaturePad value={doc.contractorSignature} onChange={(v) => set("contractorSignature", v)} label="ลายเซ็น" />
-          </div>
         </SectionCard>
       </main>
 

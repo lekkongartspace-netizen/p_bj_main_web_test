@@ -30,13 +30,23 @@ export default function FlatpickrInput({
   const fpRef = useRef<flatpickr.Instance | null>(null);
 
   useEffect(() => {
-    if (!inputRef.current) return;
+    const el = inputRef.current;
+    if (!el) return;
 
-    fpRef.current = flatpickr(inputRef.current, {
+    // React 18 StrictMode (and any re-init) double-invokes this effect in dev,
+    // which can leave a stale flatpickr instance + its altInput in the DOM,
+    // showing two overlapping date boxes. Tear down any prior instance first.
+    const prev = (el as unknown as { _flatpickr?: flatpickr.Instance })._flatpickr;
+    if (prev) prev.destroy();
+
+    fpRef.current = flatpickr(el, {
       locale: Thai,
       enableTime,
       noCalendar,
       time_24hr: true,
+      // Style the visible (alt) input like every other field so only one,
+      // correctly-styled box shows.
+      altInputClass: "input-field cursor-pointer " + className,
       // The stored value (real input) stays Gregorian so calcAge and existing
       // data keep working...
       dateFormat: dateFormat || (enableTime ? "d/m/Y H:i" : "d/m/Y"),

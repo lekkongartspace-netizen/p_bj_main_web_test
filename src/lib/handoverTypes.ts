@@ -56,6 +56,22 @@ export interface AcceptItem {
   label: string;
 }
 
+// Section 2 — รายละเอียดงานที่ส่งมอบ (auto-numbered: work item + detail + status)
+export interface Deliverable {
+  id: string;
+  name: string;
+  detail: string;
+  status: "done" | "pending";
+}
+
+// Section 8 — ภาคผนวก (site photos / test reports / extra docs; image or PDF)
+export interface AppendixItem {
+  id: string;
+  fileId: string;
+  caption: string;
+  isPdf: boolean;
+}
+
 export type HandoverStatus = "draft" | "sent" | "accepted" | "rejected";
 
 export interface HandoverDoc {
@@ -75,7 +91,13 @@ export interface HandoverDoc {
   startDate: string;
   endDate: string;
 
-  // Scope / completion status (Architecture / Interior / System / Landscape)
+  // 2. Deliverables — รายละเอียดงานที่ส่งมอบ
+  deliverables: Deliverable[];
+
+  // 8. Appendix — ภาคผนวก
+  appendixItems: AppendixItem[];
+
+  // Scope / completion status (Architecture / Interior / System / Landscape) — extra
   scopes: Scope[];
 
   // 3. Site overview
@@ -139,6 +161,13 @@ export function defaultHandover(id: string, shareToken: string): HandoverDoc {
     contractor: "Matching Wealth Co., Ltd.",
     startDate: "",
     endDate: "",
+    deliverables: [
+      { id: uid("dl_"), name: "งานโครงสร้าง", detail: "เช่น ฐานราก เสา คาน", status: "done" },
+      { id: uid("dl_"), name: "งานสถาปัตย์", detail: "ผนัง พื้น ฝ้า", status: "done" },
+      { id: uid("dl_"), name: "งานระบบไฟฟ้า", detail: "เดินสาย ตู้ไฟ", status: "done" },
+      { id: uid("dl_"), name: "งานระบบประปา", detail: "ท่อ น้ำดี น้ำทิ้ง", status: "done" },
+    ],
+    appendixItems: [],
     scopes: [
       { key: "architecture", label: "งานสถาปัตย์ / โครงสร้าง", status: "completed" },
       { key: "interior", label: "งานตกแต่งภายใน", status: "completed" },
@@ -205,6 +234,8 @@ export function normalizeHandover(raw: Partial<HandoverDoc> & { id: string; shar
   return {
     ...base,
     ...raw,
+    deliverables: raw.deliverables?.length ? raw.deliverables : base.deliverables,
+    appendixItems: raw.appendixItems ?? base.appendixItems,
     scopes: raw.scopes?.length ? raw.scopes : base.scopes,
     buildings: raw.buildings ?? base.buildings,
     detailImages: raw.detailImages ?? base.detailImages,
