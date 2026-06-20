@@ -458,22 +458,6 @@ export default function HandoverDocumentClient({ doc, token }: Props) {
           </Page>
         )}
 
-        {/* Completion status */}
-        <Page>
-          <PageHead title="สถานะความสำเร็จของงาน" />
-          <div className="space-y-2">
-            {doc.scopes.map((s) => (
-              <div key={s.key} className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
-                <span className="font-medium text-gray-800">{s.label}</span>
-                <span className={"inline-flex items-center gap-2 text-sm font-semibold " + (s.status === "completed" ? "text-green-600" : "text-yellow-600")}>
-                  <Check on={s.status === "completed"} />
-                  {s.status === "completed" ? "Completed" : "ค้าง"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Page>
-
         {/* Warranty */}
         <Page>
           <PageHead title="การรับประกัน (Warranty)" />

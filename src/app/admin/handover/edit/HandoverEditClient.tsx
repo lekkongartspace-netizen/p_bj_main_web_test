@@ -126,6 +126,41 @@ function SectionCard({ title, desc, children }: { title: string; desc?: string; 
   );
 }
 
+// Two (or more) mutually-exclusive buttons; click to pick one.
+function ChoiceToggle({
+  value,
+  options,
+  onChange,
+  className,
+}: {
+  value: string;
+  options: { value: string; label: string; activeClass?: string }[];
+  onChange: (v: string) => void;
+  className?: string;
+}) {
+  return (
+    <div className={"inline-flex rounded-lg border-2 border-gray-200 overflow-hidden " + (className || "")}>
+      {options.map((o, i) => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            className={
+              "flex-1 px-3 h-[42px] text-sm font-semibold transition-colors whitespace-nowrap " +
+              (i > 0 ? "border-l-2 border-gray-200 " : "") +
+              (active ? o.activeClass || "bg-brand-red text-white" : "bg-white text-gray-500 hover:bg-gray-50")
+            }
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 const iconBtn = "text-gray-400 hover:text-red-500 transition-colors";
 const xIcon = (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -240,12 +275,7 @@ export default function HandoverEditClient({ session }: Props) {
   const removeAppendix = (id: string) =>
     setDoc((p) => ({ ...p, appendixItems: p.appendixItems.filter((x) => x.id !== id) }));
 
-  // ---- Extras: scopes / buildings / detail images / accept items --------------
-  const setScopeStatus = (i: number, status: "completed" | "pending") =>
-    setDoc((p) => ({ ...p, scopes: p.scopes.map((s, idx) => (idx === i ? { ...s, status } : s)) }));
-  const setScopeLabel = (i: number, label: string) =>
-    setDoc((p) => ({ ...p, scopes: p.scopes.map((s, idx) => (idx === i ? { ...s, label } : s)) }));
-
+  // ---- Extras: buildings / detail images / accept items -----------------------
   const addBuilding = () =>
     setDoc((p) => ({
       ...p,
@@ -396,22 +426,33 @@ export default function HandoverEditClient({ session }: Props) {
 
         {/* 2. Deliverables */}
         <SectionCard title="2. รายละเอียดงานที่ส่งมอบ" desc="ลำดับอัตโนมัติ · เลือกสถานะ เสร็จ/ค้าง · ลบหรือเพิ่มหัวข้อได้">
-          <div className="space-y-2">
+          <div className="hidden sm:flex items-center gap-2 px-1 mb-2 text-xs font-semibold text-gray-500">
+            <span className="w-7 text-center shrink-0">ลำดับ</span>
+            <span className="flex-1">รายการงาน</span>
+            <span className="flex-1">รายละเอียด</span>
+            <span className="w-[150px] text-center shrink-0">สถานะ</span>
+            <span className="w-5 shrink-0" />
+          </div>
+          <div className="space-y-3 sm:space-y-2">
             {doc.deliverables.map((d, i) => (
-              <div key={d.id} className="flex items-start gap-2">
-                <span className="w-7 h-9 flex items-center justify-center text-sm font-bold text-brand-red shrink-0">{i + 1}</span>
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input value={d.name} onChange={(e) => updateDeliverable(d.id, { name: e.target.value })} className="input-field" placeholder="รายการงาน เช่น งานโครงสร้าง" />
-                  <input value={d.detail} onChange={(e) => updateDeliverable(d.id, { detail: e.target.value })} className="input-field" placeholder="รายละเอียด เช่น ฐานราก เสา คาน" />
+              <div key={d.id} className="flex flex-col sm:flex-row sm:items-center gap-2 border-b border-gray-100 pb-3 sm:border-0 sm:pb-0">
+                <div className="flex items-center gap-2 sm:contents">
+                  <span className="w-7 text-center text-sm font-bold text-brand-red shrink-0">{i + 1}</span>
+                  <input value={d.name} onChange={(e) => updateDeliverable(d.id, { name: e.target.value })} className="input-field flex-1" placeholder="รายการงาน" />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => updateDeliverable(d.id, { status: d.status === "done" ? "pending" : "done" })}
-                  className={"shrink-0 w-24 h-[42px] rounded-lg text-sm font-semibold border-2 transition-colors " + (d.status === "done" ? "border-green-500 bg-green-50 text-green-700" : "border-yellow-400 bg-yellow-50 text-yellow-700")}
-                >
-                  {d.status === "done" ? "✔ เสร็จ" : "☐ ค้าง"}
-                </button>
-                <button type="button" onClick={() => removeDeliverable(d.id)} className={"shrink-0 mt-2.5 " + iconBtn}>{xIcon}</button>
+                <input value={d.detail} onChange={(e) => updateDeliverable(d.id, { detail: e.target.value })} className="input-field flex-1" placeholder="รายละเอียด" />
+                <div className="flex items-center gap-2">
+                  <ChoiceToggle
+                    className="w-[150px]"
+                    value={d.status}
+                    onChange={(v) => updateDeliverable(d.id, { status: v as "done" | "pending" })}
+                    options={[
+                      { value: "done", label: "เสร็จ", activeClass: "bg-green-600 text-white" },
+                      { value: "pending", label: "ค้าง", activeClass: "bg-yellow-500 text-white" },
+                    ]}
+                  />
+                  <button type="button" onClick={() => removeDeliverable(d.id)} className={"shrink-0 " + iconBtn}>{xIcon}</button>
+                </div>
               </div>
             ))}
           </div>
@@ -419,17 +460,24 @@ export default function HandoverEditClient({ session }: Props) {
         </SectionCard>
 
         {/* 3. Documents handed over */}
-        <SectionCard title="3. รายการเอกสารที่ส่งมอบ" desc="เปิด/ปิด รายการที่ส่งมอบ · เพิ่มรายการอื่นได้">
+        <SectionCard title="3. รายการเอกสารที่ส่งมอบ" desc="เลือก ส่งมอบ/ไม่ส่ง · เพิ่มรายการอื่นได้">
+          <div className="hidden sm:flex items-center gap-2 px-1 mb-2 text-xs font-semibold text-gray-500">
+            <span className="w-[170px] shrink-0 text-center">สถานะการส่งมอบ</span>
+            <span className="flex-1">รายการเอกสาร</span>
+            <span className="w-5 shrink-0" />
+          </div>
           <div className="space-y-2">
             {doc.documents.map((d) => (
               <div key={d.id} className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => updateDocItem(d.id, { included: !d.included })}
-                  className={"shrink-0 w-20 h-[42px] rounded-lg text-xs font-semibold border-2 transition-colors " + (d.included ? "border-green-500 bg-green-50 text-green-700" : "border-gray-300 bg-gray-50 text-gray-400")}
-                >
-                  {d.included ? "✔ ส่งมอบ" : "ไม่ส่ง"}
-                </button>
+                <ChoiceToggle
+                  className="w-[170px] shrink-0"
+                  value={d.included ? "yes" : "no"}
+                  onChange={(v) => updateDocItem(d.id, { included: v === "yes" })}
+                  options={[
+                    { value: "yes", label: "ส่งมอบ", activeClass: "bg-green-600 text-white" },
+                    { value: "no", label: "ไม่ส่ง", activeClass: "bg-gray-400 text-white" },
+                  ]}
+                />
                 <input value={d.label} onChange={(e) => updateDocItem(d.id, { label: e.target.value })} className="input-field flex-1" />
                 <button type="button" onClick={() => removeDocItem(d.id)} className={iconBtn}>{xIcon}</button>
               </div>
@@ -445,16 +493,30 @@ export default function HandoverEditClient({ session }: Props) {
               <div key={x.id} className="border border-gray-200 rounded-xl p-3 relative">
                 <button type="button" onClick={() => removePunch(x.id)} className={"absolute top-3 right-3 " + iconBtn}>{xIcon}</button>
                 <h4 className="text-xs font-semibold text-gray-500 mb-2">รายการที่ {i + 1}</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <input value={x.location} onChange={(e) => updatePunch(x.id, { location: e.target.value })} className="input-field" placeholder="ตำแหน่ง เช่น อาคารหลัก" />
-                  <div className="flex gap-2">
-                    <FlatpickrInput value={x.fixDate} onChange={(v) => updatePunch(x.id, { fixDate: v })} placeholder="กำหนดแก้ไข" />
-                    <select value={x.status} onChange={(e) => updatePunch(x.id, { status: e.target.value as "pending" | "fixed" })} className="input-field w-32">
-                      <option value="pending">ค้าง</option>
-                      <option value="fixed">แก้แล้ว</option>
-                    </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">ตำแหน่ง</label>
+                    <input value={x.location} onChange={(e) => updatePunch(x.id, { location: e.target.value })} className="input-field" placeholder="เช่น อาคารหลัก" />
                   </div>
-                  <input value={x.description} onChange={(e) => updatePunch(x.id, { description: e.target.value })} className="input-field sm:col-span-2" placeholder="รายละเอียดงานที่ต้องแก้" />
+                  <div>
+                    <label className="label">กำหนดแก้ไข</label>
+                    <FlatpickrInput value={x.fixDate} onChange={(v) => updatePunch(x.id, { fixDate: v })} placeholder="เลือกวันที่" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="label">รายละเอียดงานที่ต้องแก้</label>
+                    <input value={x.description} onChange={(e) => updatePunch(x.id, { description: e.target.value })} className="input-field" placeholder="รายละเอียด" />
+                  </div>
+                  <div>
+                    <label className="label">สถานะ</label>
+                    <ChoiceToggle
+                      value={x.status}
+                      onChange={(v) => updatePunch(x.id, { status: v as "pending" | "fixed" })}
+                      options={[
+                        { value: "pending", label: "ค้าง", activeClass: "bg-yellow-500 text-white" },
+                        { value: "fixed", label: "แก้แล้ว", activeClass: "bg-green-600 text-white" },
+                      ]}
+                    />
+                  </div>
                 </div>
               </div>
             ))}
@@ -480,6 +542,12 @@ export default function HandoverEditClient({ session }: Props) {
 
         {/* 6. Assets / keys */}
         <SectionCard title="6. การส่งมอบทรัพย์สิน / กุญแจ / ระบบ">
+          <div className="hidden sm:flex items-center gap-2 px-1 mb-2 text-xs font-semibold text-gray-500">
+            <span className="flex-1">รายการ</span>
+            <span className="w-24 shrink-0">จำนวน</span>
+            <span className="flex-1">หมายเหตุ</span>
+            <span className="w-5 shrink-0" />
+          </div>
           <div className="space-y-2">
             {doc.assets.map((x) => (
               <div key={x.id} className="flex gap-2">
@@ -562,10 +630,15 @@ export default function HandoverEditClient({ session }: Props) {
                     <label className="label">ชื่ออาคาร</label>
                     <input value={b.name} onChange={(e) => updateBuilding(b.id, { name: e.target.value })} className="input-field" placeholder="เช่น อาคารหลัก" />
                     <label className="label mt-3">สถานะ</label>
-                    <select value={b.status} onChange={(e) => updateBuilding(b.id, { status: e.target.value })} className="input-field">
-                      <option value="completed">เสร็จแล้ว</option>
-                      <option value="pending">กำลังดำเนินการ</option>
-                    </select>
+                    <ChoiceToggle
+                      className="w-full"
+                      value={b.status === "pending" ? "pending" : "completed"}
+                      onChange={(v) => updateBuilding(b.id, { status: v })}
+                      options={[
+                        { value: "completed", label: "เสร็จแล้ว", activeClass: "bg-green-600 text-white" },
+                        { value: "pending", label: "กำลังดำเนินการ", activeClass: "bg-yellow-500 text-white" },
+                      ]}
+                    />
                     <label className="label mt-3">หมายเหตุ (เช่น จำนวนห้อง)</label>
                     <input value={b.note} onChange={(e) => updateBuilding(b.id, { note: e.target.value })} className="input-field" placeholder="เช่น 4 ห้องนอน 3 ห้องน้ำ" />
                   </div>
@@ -579,7 +652,6 @@ export default function HandoverEditClient({ session }: Props) {
                   <div className="space-y-2">
                     {b.scopes.map((s, si) => (
                       <div key={si} className="flex items-center gap-2">
-                        <input type="checkbox" checked={s.done} onChange={(e) => updateBuildingScope(b.id, si, { done: e.target.checked })} className="w-4 h-4 accent-brand-red" />
                         <input value={s.label} onChange={(e) => updateBuildingScope(b.id, si, { label: e.target.value })} className="input-field flex-1" placeholder="เช่น งานระบบ" />
                         <button type="button" onClick={() => removeBuildingScope(b.id, si)} className={iconBtn}>{xIcon}</button>
                       </div>
@@ -605,21 +677,6 @@ export default function HandoverEditClient({ session }: Props) {
             ))}
           </div>
           <button type="button" onClick={addDetailImage} className="btn-secondary w-full mt-4">+ เพิ่มรูป</button>
-        </SectionCard>
-
-        {/* Completion status (scopes) */}
-        <SectionCard title="สถานะความสำเร็จของงาน (Completion Status)" desc="ขอบเขตงานหลักและสถานะ">
-          <div className="space-y-2">
-            {doc.scopes.map((s, i) => (
-              <div key={s.key} className="flex items-center gap-2">
-                <input value={s.label} onChange={(e) => setScopeLabel(i, e.target.value)} className="input-field flex-1" />
-                <select value={s.status} onChange={(e) => setScopeStatus(i, e.target.value as "completed" | "pending")} className="input-field w-36">
-                  <option value="completed">เสร็จแล้ว</option>
-                  <option value="pending">ค้าง</option>
-                </select>
-              </div>
-            ))}
-          </div>
         </SectionCard>
 
         {/* Warranty */}

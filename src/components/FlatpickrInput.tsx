@@ -82,12 +82,9 @@ export default function FlatpickrInput({
     }
   }, [value]);
 
-  return (
-    <input
-      ref={inputRef}
-      placeholder={placeholder}
-      readOnly
-      className={`input-field cursor-pointer ${className}`}
-    />
-  );
+  // Render the real input as type="hidden" so React keeps it hidden across
+  // re-renders. flatpickr still reads/writes its value, and shows the formatted
+  // (Buddhist-year) value through its visible altInput. Without this, React can
+  // re-assert a visible type on re-render, leaving TWO date boxes on screen.
+  return <input ref={inputRef} type="hidden" placeholder={placeholder} readOnly />;
 }
