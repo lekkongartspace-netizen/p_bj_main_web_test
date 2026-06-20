@@ -76,3 +76,30 @@
 .flatpickr-calendar {
   font-family: 'Sarabun', 'Inter', sans-serif !important;
 }
+
+/* ---- Project Handover document: screen + print ---- */
+.hv-page {
+  background: #fff;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  html, body { background: #fff !important; }
+  .hv-shell { background: #fff !important; padding: 0 !important; }
+  .hv-page {
+    break-after: page;
+    page-break-after: always;
+    box-shadow: none !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    min-height: auto !important;
+  }
+  .hv-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .hv-avoid-break { break-inside: avoid; page-break-inside: avoid; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page { margin: 14mm; }
+}

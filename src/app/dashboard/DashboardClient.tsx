@@ -64,13 +64,23 @@ export default function DashboardClient({ session }: Props) {
             </>
           )}
 
-          <div className="card bg-gradient-to-br from-brand-red to-brand-darkred text-white">
-            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-3">
-              <span className="text-xl">🏠</span>
+          {isAdmin ? (
+            <a href="/admin/handover" className="card-hover group cursor-pointer bg-gradient-to-br from-brand-red to-brand-darkred text-white">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-3">
+                <span className="text-xl">🏠</span>
+              </div>
+              <h3 className="font-semibold">Project Handover</h3>
+              <p className="text-sm text-white/80 mt-1">สร้างเอกสารส่งมอบงานให้ลูกค้า</p>
+            </a>
+          ) : (
+            <div className="card bg-gradient-to-br from-brand-red to-brand-darkred text-white">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mb-3">
+                <span className="text-xl">🏠</span>
+              </div>
+              <h3 className="font-semibold">Project Handover</h3>
+              <p className="text-sm text-white/70 mt-1">เอกสารส่งมอบงาน</p>
             </div>
-            <h3 className="font-semibold">Project Handover</h3>
-            <p className="text-sm text-white/70 mt-1">เร็ว ๆ นี้</p>
-          </div>
+          )}
         </div>
 
         <div className="slide-up" style={{ animationDelay: "0.2s" }}>

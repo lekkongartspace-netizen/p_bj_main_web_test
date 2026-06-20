@@ -93,6 +93,12 @@ src/
 - ฟอร์มสมัครงาน (เก็บใน Google Drive)
 - จัดการ PIN (Admin เท่านั้น)
 - ดูใบสมัคร (Admin เท่านั้น)
+- **เอกสารส่งมอบงาน (Project Handover)** — แอดมินสร้างเอกสารพร้อมรูปภาพ (อาคาร/ห้อง/งานระบบ),
+  ย่อรูปอัตโนมัติในเบราว์เซอร์ก่อนอัปโหลด, ได้ลิงก์ให้ลูกค้าเปิดดู ตรวจรับ (ติ๊กเป็นข้อ ๆ),
+  เซ็นชื่อออนไลน์ และบันทึกเป็น PDF ได้ (Print-to-PDF). ดูได้ที่ `/admin/handover`
+  - เก็บข้อมูลเป็น `handover_<id>.json` + รูปบน Google Drive (โฟลเดอร์เดียวกับใบสมัคร)
+  - ลิงก์ลูกค้า: `/handover/<id>?token=<shareToken>` (ไม่ต้องล็อกอิน, ป้องกันด้วย token)
+  - รูปของ Handover เสิร์ฟผ่าน `/api/handover/file` (เฉพาะไฟล์ชื่อขึ้นต้น `handover_` เท่านั้น)
 - Responsive Design
 - Loading Spinner & Save Overlay
 - Thai Date Picker (flatpickr)
