@@ -18,6 +18,15 @@ function MWLogo({ size = "md" }: { size?: "md" | "lg" }) {
   );
 }
 
+// Small "you need to fill this" pill — guidance only, never printed.
+function ActionTag() {
+  return (
+    <span className="no-print inline-flex items-center gap-1 bg-brand-red text-white text-xs font-semibold px-2.5 py-1 rounded-full animate-pulse">
+      ✍️ ส่วนที่ต้องกรอก
+    </span>
+  );
+}
+
 function PageHead({ no, title }: { no?: number; title: string }) {
   return (
     <div className="mb-6">
@@ -147,6 +156,24 @@ export default function HandoverDocumentClient({ doc, token }: Props) {
       </div>
 
       <div className="max-w-3xl mx-auto px-3 sm:px-4 pt-6">
+        {/* Customer instructions — shown only while filling, never printed */}
+        {editing && !submitted && (
+          <div className="no-print mb-6 rounded-2xl border-2 border-brand-red/30 bg-brand-light p-5 slide-up">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">👋</span>
+              <h2 className="font-bold text-gray-900">สำหรับลูกค้า — วิธีตรวจรับงาน</h2>
+            </div>
+            <ol className="text-sm text-gray-700 space-y-1.5">
+              <li><span className="font-bold text-brand-red">1.</span> อ่านรายละเอียดงานและรูปภาพในเอกสาร</li>
+              <li><span className="font-bold text-brand-red">2.</span> ที่หัวข้อ <b>“5. การตรวจรับงาน”</b> แตะติ๊กรายการที่ตรวจแล้ว แล้วเลือก <b>ผ่าน / ไม่ผ่าน</b></li>
+              <li><span className="font-bold text-brand-red">3.</span> ที่หัวข้อ <b>“7. ลายเซ็นรับรอง”</b> กรอกชื่อและเซ็นชื่อในช่อง <b>ผู้รับมอบ</b></li>
+              <li><span className="font-bold text-brand-red">4.</span> กดปุ่ม <b>“ยืนยันผลการตรวจรับ”</b> ด้านล่างสุด</li>
+              <li><span className="font-bold text-brand-red">5.</span> (ถ้าต้องการ) กด <b>“พิมพ์ / บันทึก PDF”</b> ด้านบนเพื่อเก็บไฟล์</li>
+            </ol>
+            <p className="text-xs text-gray-400 mt-3">* คำแนะนำนี้จะไม่แสดงในไฟล์ PDF · ช่องที่ต้องกรอกจะมีป้าย <span className="text-brand-red font-semibold">✍️ ส่วนที่ต้องกรอก</span> กำกับไว้</p>
+          </div>
+        )}
+
         {/* Cover */}
         <Page>
           <div className="flex flex-col items-center text-center py-10 sm:py-16">
@@ -251,11 +278,18 @@ export default function HandoverDocumentClient({ doc, token }: Props) {
 
         {/* 5. Acceptance result (client) */}
         <Page>
-          <PageHead no={5} title="การตรวจรับงาน" />
+          <div className="flex flex-wrap items-center gap-3">
+            <PageHead no={5} title="การตรวจรับงาน" />
+            {editing && <ActionTag />}
+          </div>
+          {editing && (
+            <p className="no-print -mt-3 mb-5 text-sm text-gray-500">โปรดติ๊กรายการที่ตรวจแล้ว และเลือกผลการตรวจรับด้านล่าง</p>
+          )}
 
           {hasAccept && (
             <div className="mb-6">
-              <p className="text-sm font-bold text-gray-700 mb-2">รายการตรวจรับ</p>
+              <p className="text-sm font-bold text-gray-700 mb-1">รายการตรวจรับ</p>
+              {editing && <p className="no-print text-xs text-gray-500 mb-2">แตะที่แต่ละข้อเพื่อติ๊กว่าตรวจแล้ว</p>}
               <div className="space-y-2">
                 {doc.acceptItems.map((item, i) => {
                   const on = !!checked[item.id];
@@ -277,7 +311,7 @@ export default function HandoverDocumentClient({ doc, token }: Props) {
             </div>
           )}
 
-          <p className="text-sm font-bold text-gray-700 mb-2">ผลการตรวจรับ</p>
+          <p className="text-sm font-bold text-gray-700 mb-2">ผลการตรวจรับ {editing && <span className="text-red-500">*</span>}</p>
           <div className="flex gap-3 mb-4">
             <button type="button" disabled={!editing} onClick={() => setClientResult("pass")} className={"flex-1 rounded-xl py-3 font-semibold border-2 transition-colors " + (clientResult === "pass" ? "border-green-500 bg-green-50 text-green-700" : "border-gray-200 text-gray-500")}>✔ ผ่าน</button>
             <button type="button" disabled={!editing} onClick={() => setClientResult("fail")} className={"flex-1 rounded-xl py-3 font-semibold border-2 transition-colors " + (clientResult === "fail" ? "border-red-500 bg-red-50 text-red-700" : "border-gray-200 text-gray-500")}>✘ ไม่ผ่าน</button>
@@ -342,10 +376,15 @@ export default function HandoverDocumentClient({ doc, token }: Props) {
             </div>
 
             <div>
-              <p className="text-sm font-bold text-gray-700 mb-2">ผู้รับมอบ (เจ้าของงาน)</p>
+              <div className="flex flex-wrap items-center gap-2 mb-2">
+                <p className="text-sm font-bold text-gray-700">ผู้รับมอบ (เจ้าของงาน)</p>
+                {editing && <ActionTag />}
+              </div>
               {editing ? (
                 <>
-                  <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input-field mb-2" placeholder="ชื่อ-นามสกุล ผู้ตรวจรับ" />
+                  <label className="label">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
+                  <input value={clientName} onChange={(e) => setClientName(e.target.value)} className="input-field mb-3" placeholder="กรอกชื่อ-นามสกุลผู้ตรวจรับ" />
+                  <label className="label">เซ็นชื่อ <span className="text-red-500">*</span></label>
                   <SignaturePad value={clientSignature} onChange={setClientSignature} />
                 </>
               ) : (
@@ -482,9 +521,14 @@ export default function HandoverDocumentClient({ doc, token }: Props) {
               <button onClick={() => { setEditing(true); setSubmitted(false); }} className="btn-ghost text-sm mt-3">แก้ไขผลการตรวจรับ</button>
             </div>
           ) : (
-            <button onClick={handleSubmit} disabled={sending} className="btn-primary w-full py-3 text-base">
-              {sending ? "กำลังส่ง..." : "ยืนยันผลการตรวจรับ"}
-            </button>
+            <div>
+              <p className="text-center text-sm text-gray-500 mb-2">
+                ก่อนกดยืนยัน โปรดเช็ก: เลือก <b>ผ่าน/ไม่ผ่าน</b> · กรอก <b>ชื่อ</b> · <b>เซ็นชื่อ</b> ครบแล้ว
+              </p>
+              <button onClick={handleSubmit} disabled={sending} className="btn-primary w-full py-3 text-base">
+                {sending ? "กำลังส่ง..." : "ยืนยันผลการตรวจรับ"}
+              </button>
+            </div>
           )}
           <p className="text-center text-xs text-gray-400 mt-3">กดปุ่ม &quot;พิมพ์ / บันทึก PDF&quot; ด้านบนเพื่อบันทึกเอกสารเป็นไฟล์ PDF</p>
           <div className="text-center text-xs text-gray-400 mt-6">MATCHING WEALTH CO., LTD.</div>
